@@ -1,0 +1,11 @@
+[package]
+name = "stun_3478"
+version = "0.1.0"
+authors = ["Toshiya Nakakura <nakakura@me.com>"]
+edition = "2018"
+
+[dependencies]
+nom = "*"
+
+[dev-dependencies]
+hex = "*"
