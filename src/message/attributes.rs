@@ -1,17 +1,12 @@
 use std::mem;
 use std::net::Ipv4Addr;
 
-use byteorder::{LittleEndian, BigEndian, WriteBytesExt};
+use byteorder::{BigEndian, WriteBytesExt};
 use nom::*;
-
-use super::Attribute;
-
-#[cfg(test)]
-use hex;
 
 fn parse_addr(i: &[u8]) -> IResult<&[u8], (u8, u16, [u8;4])> {
     do_parse!(i,
-            x: be_u8
+            _x: be_u8
             >> a_type: be_u8
             >> port: be_u16
             >> address: be_u32
@@ -365,7 +360,7 @@ impl UserName {
     pub fn decode(i: &[u8]) -> Option<Self> {
         match String::from_utf8(i.to_vec()) {
             Ok(x) => Some(Self::new(x)),
-            Err(e) => None,
+            Err(_e) => None,
         }
     }
 
@@ -406,7 +401,7 @@ impl Password {
     pub fn decode(i: &[u8]) -> Option<Self> {
         match String::from_utf8(i.to_vec()) {
             Ok(x) => Some(Self::new(x)),
-            Err(e) => None,
+            Err(_e) => None,
         }
     }
 
@@ -449,7 +444,7 @@ impl MessageIntegrity {
     pub fn decode(i: &[u8]) -> Option<Self> {
         match String::from_utf8(i.to_vec()) {
             Ok(x) => Some(Self::new(x)),
-            Err(e) => None,
+            Err(_e) => None,
         }
     }
 

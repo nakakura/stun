@@ -1,9 +1,6 @@
 pub mod attributes;
 
-use std::mem;
-use std::net::Ipv4Addr;
-
-use byteorder::{LittleEndian, BigEndian, WriteBytesExt};
+use byteorder::{BigEndian, WriteBytesExt};
 use nom::*;
 
 #[cfg(test)]
@@ -112,7 +109,6 @@ impl Attribute {
             Attribute::ErrorCode(ref i) => Some((9, i.encode())),
             Attribute::UnknownAttributes(ref i) => Some((10, i.encode())),
             Attribute::ReflectedFrom(ref i) => Some((11, i.encode())),
-            _ => None
         };
 
         match enc_opt {
@@ -231,7 +227,6 @@ fn test_decode_binding_response() {
     // a Binding Request includes a CHANGE-REQUEST
     let vec = hex::decode("0101004801ace636e501b3134502510e5c5c220e00010008000172e77345e69400040008000101bb34c2efc600050008000101bb34c2efc6802200204369747269782d332e322e352e3920274d61727368616c205765737427000000").unwrap();
     let x = StunMessage::decode(&vec).unwrap();
-    let attributes = x.attributes.clone();
 
     /*
     let vec = attributes[0].encode().unwrap();
@@ -261,8 +256,6 @@ fn test_decode_binding_request() {
     // a Binding Request includes a CHANGE-REQUEST
     let vec = hex::decode("0001000802aa4e5efc98eb1acd28b659399b85480003000400000004").unwrap();
     let x = StunMessage::decode(&vec).unwrap();
-    let attributes = x.attributes.clone();
-
 
     let binary = x.encode().unwrap();
     assert_eq!(vec, binary);
@@ -279,8 +272,6 @@ fn test_decode_binding_response2() {
     // a Binding Request includes a CHANGE-REQUEST
     let vec = hex::decode("0101004801ace636e501b3134502510e5c5c220e00010008000172e77345e69400040008000101bb34c2efc600050008000101bb34c2efc6802200204369747269782d332e322e352e3920274d61727368616c205765737427000000").unwrap();
     let x = StunMessage::decode(&vec).unwrap();
-    let attributes = x.attributes.clone();
-
     /*
     let vec = attributes[0].encode().unwrap();
     let a0 = extract(&vec).unwrap().1;
@@ -310,7 +301,6 @@ fn test_decode_binding_error_response() {
     // a Binding Request includes a CHANGE-REQUEST
     let vec = hex::decode("0111007402aa4e5efc98eb1acd28b659399b85480009004c00000414556e6b6e6f776e206174747269627574653a205455524e207365727665722077617320636f6e6669677572656420776974686f757420524643203537383020737570706f72740000802200204369747269782d332e322e352e3920274d61727368616c205765737427000000").unwrap();
     let x = StunMessage::decode(&vec).unwrap();
-    let attributes = x.attributes.clone();
     let binary = x.encode().unwrap();
     //because RFC 3489 doesn't include SOFTWARE attribute
     assert_eq!(vec[0..100].to_vec(), binary);
@@ -325,7 +315,6 @@ fn test_decode_binding_request2() {
     // a Binding Request includes a CHANGE-REQUEST
     let vec = hex::decode("0001000803e5315f6932a542f14e0d2d83e97c1e0003000400000002").unwrap();
     let x = StunMessage::decode(&vec).unwrap();
-    let attributes = x.attributes.clone();
     let binary = x.encode();
     assert_eq!(vec, binary.unwrap());
 }
