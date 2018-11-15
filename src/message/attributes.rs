@@ -1,67 +1,22 @@
 use std::mem;
 use std::net::Ipv4Addr;
 
+use byteorder::{LittleEndian, BigEndian, WriteBytesExt};
 use nom::*;
+
+use super::Attribute;
 
 #[cfg(test)]
 use hex;
 
-#[derive(Debug)]
-pub struct StunMessage {
-    pub header: StunHeader,
-    pub attributes: Vec<Attribute>,
-}
-
-impl StunMessage {
-    pub fn new(data: &[u8]) -> Option<Self> {
-        if let Ok((buf, data)) = parse_header(data) {
-            let body = data.1;
-            let mut item = RawAttributesIter { buf: body };
-            Some(StunMessage {
-                header: data.0?,
-                attributes: item.filter_map(|x| x.build() ).collect()
-            })
-        } else {
-            None
-        }
-   }
-}
-
-#[derive(Debug)]
-pub struct StunHeader {
-    message_type: u16,
-    length: u16,
-    transaction_id: [u8; 16],
-}
-
-impl StunHeader {
-    pub fn new(message_type: u16, length: u16, transaction_id: &[u8]) -> Option<Self> {
-        if transaction_id.len() != 16 {
-            None
-        } else {
-            let mut arr = [0u8; 16];
-            arr.copy_from_slice(&transaction_id[0..16]);
-            Some(StunHeader {
-                message_type: message_type,
-                length: length,
-                transaction_id: arr
-            })
-        }
-    }
-}
-#[derive(Debug)]
-pub enum Attribute {
-    MappedAddress(MappedAddress),
-    ResponseAddress(ResponseAddress),
-    ChangeRequest(ChangeRequest),
-    SourceAddress(SourceAddress),
-    ChangedAddress(ChangedAddress),
-    UserName(UserName),
-    Password(Password),
-    MessageIntegrity(MessageIntegrity),
-    ErrorCode(ErrorCode),
-    UnknownAttributes(Unknown),
-    ReflectedFrom(ReflectedFrom),
+fn parse_addr(i: &[u8]) -> IResult<&[u8], (u8, u16, [u8;4])> {
+    do_parse!(i,
+            x: be_u8
+            >> a_type: be_u8
+            >> port: be_u16
+            >> address: be_u32
+            >> (a_type, port, unsafe { mem::transmute::<u32, [u8;4]>(address) })
+        )
 }
 
 // 11.2.1 MAPPED-ADDRESS
@@ -83,7 +38,7 @@ pub enum Attribute {
 //   8 bits of the MAPPED-ADDRESS are ignored, for the purposes of
 //   aligning parameters on natural boundaries.  The IPv4 address is 32
 //   bits.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct MappedAddress {
     family: u8,
     port: u16,
@@ -91,27 +46,41 @@ pub struct MappedAddress {
 }
 
 impl MappedAddress {
-    pub fn new(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = MappedAddress::parse(i) {
-            Some(MappedAddress {
-                family: family,
-                port: port,
-                address: Ipv4Addr::new(address[0], address[1], address[2], address[3])
-            })
+    pub fn new(family: u8, port: u16, address: Ipv4Addr) -> Self {
+        MappedAddress {
+            family: family,
+            port: port,
+            address: address
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
+        if let Ok((_, (family, port, address))) = parse_addr(i) {
+            Some(
+                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+            )
         } else {
             None
         }
-   }
-
-    fn parse(i: &[u8]) -> IResult<&[u8], (u8, u16, [u8;4])> {
-         do_parse!(i,
-            x: be_u8
-            >> a_type: be_u8
-            >> port: be_u16
-            >> address: be_u32
-            >> (a_type, port, unsafe { mem::transmute::<u32, [u8;4]>(address) })
-        )
     }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut wtr = vec![];
+        wtr.write_u8(0)?;
+        wtr.write_u8(self.family)?;
+        wtr.write_u16::<BigEndian>(self.port)?;
+        let addr = unsafe { mem::transmute::<[u8;4], u32>(self.address.octets()) };
+        wtr.write_u32::<BigEndian>(addr)?;
+        Ok(wtr)
+    }
+}
+
+#[test]
+fn test_enc_dec_mapped_address() {
+    let map = MappedAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
+    let binary = map.encode().unwrap();
+    let map2 = MappedAddress::decode(&binary);
+    assert_eq!(Some(map), map2);
 }
 
 // 11.2.2 RESPONSE-ADDRESS
@@ -119,7 +88,7 @@ impl MappedAddress {
 //   The RESPONSE-ADDRESS attribute indicates where the response to a
 //   Binding Request should be sent.  Its syntax is identical to MAPPED-
 //   ADDRESS.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct ResponseAddress {
     family: u8,
     port: u16,
@@ -127,17 +96,41 @@ pub struct ResponseAddress {
 }
 
 impl ResponseAddress {
-    pub fn new(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = MappedAddress::parse(i) {
-            Some(ResponseAddress {
-                family: family,
-                port: port,
-                address: Ipv4Addr::new(address[0], address[1], address[2], address[3])
-            })
+    pub fn new(family: u8, port: u16, address: Ipv4Addr) -> Self {
+        ResponseAddress {
+            family: family,
+            port: port,
+            address: address
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
+        if let Ok((_, (family, port, address))) = parse_addr(i) {
+            Some(
+                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+            )
         } else {
             None
         }
     }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut wtr = vec![];
+        wtr.write_u8(0)?;
+        wtr.write_u8(self.family)?;
+        wtr.write_u16::<BigEndian>(self.port)?;
+        let addr = unsafe { mem::transmute::<[u8;4], u32>(self.address.octets()) };
+        wtr.write_u32::<BigEndian>(addr)?;
+        Ok(wtr)
+    }
+}
+
+#[test]
+fn test_enc_dec_response_address() {
+    let map = ResponseAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
+    let binary = map.encode().unwrap();
+    let map2 = ResponseAddress::decode(&binary);
+    assert_eq!(Some(map), map2);
 }
 
 // 11.2.3  CHANGED-ADDRESS
@@ -148,7 +141,7 @@ impl ResponseAddress {
 //   Binding Request.  The attribute is always present in a Binding
 //   Response, independent of the value of the flags.  Its syntax is
 //   identical to MAPPED-ADDRESS.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct ChangedAddress {
     family: u8,
     port: u16,
@@ -156,17 +149,41 @@ pub struct ChangedAddress {
 }
 
 impl ChangedAddress {
-    pub fn new(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = MappedAddress::parse(i) {
-            Some(ChangedAddress {
-                family: family,
-                port: port,
-                address: Ipv4Addr::new(address[0], address[1], address[2], address[3])
-            })
+    pub fn new(family: u8, port: u16, address: Ipv4Addr) -> Self {
+        ChangedAddress {
+            family: family,
+            port: port,
+            address: address
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
+        if let Ok((_, (family, port, address))) = parse_addr(i) {
+            Some(
+                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+            )
         } else {
             None
         }
     }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut wtr = vec![];
+        wtr.write_u8(0)?;
+        wtr.write_u8(self.family)?;
+        wtr.write_u16::<BigEndian>(self.port)?;
+        let addr = unsafe { mem::transmute::<[u8;4], u32>(self.address.octets()) };
+        wtr.write_u32::<BigEndian>(addr)?;
+        Ok(wtr)
+    }
+}
+
+#[test]
+fn test_enc_dec_change_address() {
+    let map = ChangedAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
+    let binary = map.encode().unwrap();
+    let map2 = ChangedAddress::decode(&binary);
+    assert_eq!(Some(map), map2);
 }
 
 // 11.2.4 CHANGE-REQUEST
@@ -191,31 +208,85 @@ impl ChangedAddress {
 //   B: This is the "change port" flag.  If true, it requests the
 //      server to send the Binding Response with a different port than the
 //      one the Binding Request was received on.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct ChangeRequest {
     a: bool,
     b: bool,
 }
 
 impl ChangeRequest {
-    pub fn new(i: &[u8]) -> Option<Self> {
+    pub fn new(a: bool, b: bool) -> Self {
+        ChangeRequest {
+            a: a,
+            b: b
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
         if let Ok((_, (a, b))) = ChangeRequest::parse(i) {
-            Some(ChangeRequest {
-                a: a,
-                b: b,
-            })
+            Some(Self::new(a, b))
         } else {
             None
         }
     }
 
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut flag = 0u8;
+        if self.a {
+            flag |= 4;
+        }
+        if self.b {
+            flag |= 2;
+        }
+        let mut wtr = vec![];
+        wtr.write_u8(0)?;
+        wtr.write_u8(0)?;
+        wtr.write_u8(0)?;
+        wtr.write_u8(flag).unwrap();
+        Ok(wtr)
+    }
+
     fn parse(i: &[u8]) -> IResult<&[u8], (bool, bool)> {
         do_parse!(i,
             _x: take!(3)
-            >> last_byte: bits!(tuple!(take_bits!(u8, 1), take_bits!(u8, 1), take_bits!(u8, 1), take_bits!(u8, 1)))
-            >> (last_byte.1 == 1, last_byte.1 == 1)
+            >> last_byte: bits!(tuple!(take_bits!(u8, 5), take_bits!(u8, 1), take_bits!(u8, 1), take_bits!(u8, 1)))
+            >> (
+                last_byte.1 == 1, last_byte.2 == 1
+               )
         )
     }
+}
+
+#[test]
+fn test_enc_dec_change_request_true_true() {
+    let change_req = ChangeRequest::new(true, true);
+    let binary = change_req.encode().unwrap();
+    let change_req2 = ChangeRequest::decode(&binary);
+    assert_eq!(Some(change_req), change_req2);
+}
+
+#[test]
+fn test_enc_dec_change_request_true_false() {
+    let change_req = ChangeRequest::new(true, false);
+    let binary = change_req.encode().unwrap();
+    let change_req2 = ChangeRequest::decode(&binary);
+    assert_eq!(Some(change_req), change_req2);
+}
+
+#[test]
+fn test_enc_dec_change_request_false_true() {
+    let change_req = ChangeRequest::new(false, true);
+    let binary = change_req.encode().unwrap();
+    let change_req2 = ChangeRequest::decode(&binary);
+    assert_eq!(Some(change_req), change_req2);
+}
+
+#[test]
+fn test_enc_dec_change_request_false_false() {
+    let change_req = ChangeRequest::new(false, false);
+    let binary = change_req.encode().unwrap();
+    let change_req2 = ChangeRequest::decode(&binary);
+    assert_eq!(Some(change_req), change_req2);
 }
 
 // 11.2.5 SOURCE-ADDRESS
@@ -224,7 +295,7 @@ impl ChangeRequest {
 //   indicates the source IP address and port that the server is sending
 //   the response from.  Its syntax is identical to that of MAPPED-
 //   ADDRESS.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct SourceAddress {
     family: u8,
     port: u16,
@@ -232,17 +303,41 @@ pub struct SourceAddress {
 }
 
 impl SourceAddress {
-    pub fn new(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = MappedAddress::parse(i) {
-            Some(SourceAddress {
-                family: family,
-                port: port,
-                address: Ipv4Addr::new(address[0], address[1], address[2], address[3])
-            })
+    pub fn new(family: u8, port: u16, address: Ipv4Addr) -> Self {
+        SourceAddress {
+            family: family,
+            port: port,
+            address: address
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
+        if let Ok((_, (family, port, address))) = parse_addr(i) {
+            Some(
+                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+            )
         } else {
             None
         }
     }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut wtr = vec![];
+        wtr.write_u8(0)?;
+        wtr.write_u8(self.family)?;
+        wtr.write_u16::<BigEndian>(self.port)?;
+        let addr = unsafe { mem::transmute::<[u8;4], u32>(self.address.octets()) };
+        wtr.write_u32::<BigEndian>(addr)?;
+        Ok(wtr)
+    }
+}
+
+#[test]
+fn test_enc_dec_source_address() {
+    let map = SourceAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
+    let binary = map.encode().unwrap();
+    let map2 = SourceAddress::decode(&binary);
+    assert_eq!(Some(map), map2);
 }
 
 // 11.2.6 USERNAME
@@ -255,20 +350,36 @@ impl SourceAddress {
 //   The value of USERNAME is a variable length opaque value.  Its length
 //   MUST be a multiple of 4 (measured in bytes) in order to guarantee
 //   alignment of attributes on word boundaries.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct UserName {
     user_name: String
 }
 
 impl UserName {
-    pub fn new(i: &[u8]) -> Option<Self> {
+    pub fn new(user_name: String) -> Self {
+        UserName {
+            user_name: user_name
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
         match String::from_utf8(i.to_vec()) {
-            Ok(x) => Some(UserName {
-                user_name: x
-            }),
+            Ok(x) => Some(Self::new(x)),
             Err(e) => None,
         }
     }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        Ok(self.user_name.clone().into_bytes())
+    }
+}
+
+#[test]
+fn test_enc_dec_user_name() {
+    let user = UserName { user_name: "hoge".to_string() };
+    let binary = user.encode().unwrap();
+    let user2 = UserName::decode(&binary);
+    assert_eq!(Some(user), user2);
 }
 
 // 11.2.7 PASSWORD
@@ -280,20 +391,36 @@ impl UserName {
 //   as a shared secret.  Its length MUST be a multiple of 4 (measured in
 //   bytes) in order to guarantee alignment of attributes on word
 //   boundaries.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct Password {
     password: String
 }
 
 impl Password {
-    pub fn new(i: &[u8]) -> Option<Self> {
+    pub fn new(password: String) -> Self {
+        Password {
+            password: password
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
         match String::from_utf8(i.to_vec()) {
-            Ok(x) => Some(Password {
-                password: x
-            }),
+            Ok(x) => Some(Self::new(x)),
             Err(e) => None,
         }
     }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        Ok(self.password.clone().into_bytes())
+    }
+}
+
+#[test]
+fn test_enc_dec_password() {
+    let passwd = Password { password: "passwd".to_string() };
+    let binary = passwd.encode().unwrap();
+    let passwd2 = Password::decode(&binary);
+    assert_eq!(Some(passwd), passwd2);
 }
 
 // 11.2.8 MESSAGE-INTEGRITY
@@ -307,20 +434,36 @@ impl Password {
 //   a multiple of 64 bytes.  As a result, the MESSAGE-INTEGRITY attribute
 //   MUST be the last attribute in any STUN message.  The key used as
 //   input to HMAC depends on the context.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct MessageIntegrity {
     hmac: String
 }
 
 impl MessageIntegrity {
-    pub fn new(i: &[u8]) -> Option<Self> {
+    pub fn new(hmac: String) -> Self {
+        MessageIntegrity {
+            hmac: hmac
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
         match String::from_utf8(i.to_vec()) {
-            Ok(x) => Some(MessageIntegrity {
-                hmac: x
-            }),
+            Ok(x) => Some(Self::new(x)),
             Err(e) => None,
         }
     }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        Ok(self.hmac.clone().into_bytes())
+    }
+}
+
+#[test]
+fn test_enc_dec_integrity() {
+    let integrity = MessageIntegrity { hmac: "hmac".to_string() };
+    let binary = integrity.encode().unwrap();
+    let integrity2 = MessageIntegrity::decode(&binary);
+    assert_eq!(Some(integrity), integrity2);
 }
 
 // 11.2.9 ERROR-CODE
@@ -386,7 +529,7 @@ impl MessageIntegrity {
 //
 //   600 (Global Failure:) The server is refusing to fulfill the request.
 //        The client should not retry.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct ErrorCode {
     class: u8,
     number: u8,
@@ -394,19 +537,33 @@ pub struct ErrorCode {
 }
 
 impl ErrorCode {
-    pub fn new(i: &[u8]) -> Option<Self> {
+    pub fn new(class: u8, number: u8, reason: String) -> Self {
+        ErrorCode {
+            class: class,
+            number: number,
+            reason: reason
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
         if let Ok((_, (class, number, reason))) = ErrorCode::parse(i) {
             match String::from_utf8(reason.to_vec()) {
-                Ok(x) => Some(ErrorCode {
-                    class: class,
-                    number: number,
-                    reason: x,
-                }),
-                Err(e) => None,
+                Ok(x) => Some(Self::new(class, number, x)),
+                Err(_e) => None,
             }
         } else {
             None
         }
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut wtr = vec![];
+        wtr.write_u8(0)?;
+        wtr.write_u8(0)?;
+        wtr.write_u8(self.class)?;
+        wtr.write_u8(self.number)?;
+        wtr.extend_from_slice(&self.reason.as_bytes());
+        Ok(wtr)
     }
 
     fn parse(i: &[u8]) -> IResult<&[u8], (u8, u8, &[u8])> {
@@ -419,6 +576,14 @@ impl ErrorCode {
             >> (class.1, number, reason)
         )
     }
+}
+
+#[test]
+fn test_enc_dec_error_code() {
+    let error = ErrorCode::new(1, 1, "hoge".to_string());
+    let binary = error.encode().unwrap();
+    let error2 = ErrorCode::decode(&binary);
+    assert_eq!(Some(error), error2);
 }
 
 // 11.2.10 UNKNOWN-ATTRIBUTES
@@ -440,18 +605,30 @@ impl ErrorCode {
 //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //    |      Attribute 3 Type           |     Attribute 4 Type    ...
 //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct Unknown {
     attributes: Vec<u16>
 }
 
 impl Unknown {
-    pub fn new(i: &[u8]) -> Self {
+    pub fn new(attributes: Vec<u16>) -> Self {
+        Unknown {
+            attributes: attributes
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Self {
         let iter = UnknownIter { buf: i.to_vec() };
         let vec: Vec<u16> = iter.collect();
-        Unknown {
-            attributes: vec
+        Self::new(vec)
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut wtr: Vec<u8> = vec!();
+        for x in self.attributes.iter() {
+            wtr.write_u16::<BigEndian>(*x)?;
         }
+        Ok(wtr)
     }
 }
 
@@ -483,6 +660,14 @@ impl Iterator for UnknownIter {
     }
 }
 
+#[test]
+fn test_enc_dec_unknown() {
+    let unknown = Unknown::new(vec!(1, 2, ::std::u16::MAX));
+    let binary = unknown.encode().unwrap();
+    let unknown2 = Unknown::decode(&binary);
+    assert_eq!(unknown, unknown2);
+}
+
 // 11.2.11 REFLECTED-FROM
 //
 //   The REFLECTED-FROM attribute is present only in Binding Responses,
@@ -493,7 +678,7 @@ impl Iterator for UnknownIter {
 //   denial-of-service attacks.
 //
 //   Its syntax is identical to the MAPPED-ADDRESS attribute.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct ReflectedFrom {
     family: u8,
     port: u16,
@@ -501,195 +686,41 @@ pub struct ReflectedFrom {
 }
 
 impl ReflectedFrom {
-    pub fn new(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = MappedAddress::parse(i) {
-            Some(ReflectedFrom {
-                family: family,
-                port: port,
-                address: Ipv4Addr::new(address[0], address[1], address[2], address[3])
-            })
+    pub fn new(family: u8, port: u16, address: Ipv4Addr) -> Self {
+        ReflectedFrom {
+            family: family,
+            port: port,
+            address: address
+        }
+    }
+
+    pub fn decode(i: &[u8]) -> Option<Self> {
+        if let Ok((_, (family, port, address))) = parse_addr(i) {
+            Some(
+                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+            )
         } else {
             None
         }
     }
-}
 
-fn parse_header(i: &[u8]) -> IResult<&[u8], (Option<StunHeader>, Vec<u8>)> {
-    do_parse!(i,
-           p_type: be_u16
-        >> len: be_u16
-        >> transaction_id: take!(16)
-        >> payload: take!(len)
-        >> (
-            StunHeader::new(p_type, len, transaction_id), payload.to_vec()
-           )
-    )
-}
-
-#[derive(Debug)]
-struct RawAttribute {
-    a_type: u16,
-    length: u16,
-    value: Vec<u8>,
-}
-
-struct RawAttributesIter {
-    buf: Vec<u8>
-}
-
-impl RawAttribute {
-    pub fn build(&self) -> Option<Attribute> {
-        match self.a_type {
-            1 => {
-                Some(Attribute::MappedAddress(MappedAddress::new(&self.value)?))
-            },
-            2 => {
-                Some(Attribute::ResponseAddress(ResponseAddress::new(&self.value)?))
-            },
-            3 => {
-                Some(Attribute::ChangeRequest(ChangeRequest::new(&self.value)?))
-            },
-            4 => {
-                Some(Attribute::SourceAddress(SourceAddress::new(&self.value)?))
-            },
-            5 => {
-                Some(Attribute::ChangedAddress(ChangedAddress::new(&self.value)?))
-            },
-            6 => {
-                Some(Attribute::UserName(UserName::new(&self.value)?))
-            },
-            7 => {
-                Some(Attribute::Password(Password::new(&self.value)?))
-            },
-            8 => {
-                Some(Attribute::MessageIntegrity(MessageIntegrity::new(&self.value)?))
-            },
-            9 => {
-                Some(Attribute::ErrorCode(ErrorCode::new(&self.value)?))
-            },
-            10 => {
-                Some(Attribute::UnknownAttributes(Unknown::new(&self.value)))
-            },
-            11 => {
-                Some(Attribute::ReflectedFrom(ReflectedFrom::new(&self.value)?))
-            },
-            _ => {
-                None
-            }
-         }
+    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+        let mut wtr = vec![];
+        wtr.write_u8(0)?;
+        wtr.write_u8(self.family)?;
+        wtr.write_u16::<BigEndian>(self.port)?;
+        let addr = unsafe { mem::transmute::<[u8;4], u32>(self.address.octets()) };
+        wtr.write_u32::<BigEndian>(addr)?;
+        Ok(wtr)
     }
 }
-
-impl Iterator for RawAttributesIter {
-    type Item = RawAttribute;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let data = extract(&self.buf);
-        match data {
-            Err(_) => None,
-            Ok((i, attribute)) => {
-                self.buf = i.to_vec();
-                Some(attribute)
-            }
-        }
-    }
-}
-
-fn extract(i: &[u8]) -> IResult<&[u8], RawAttribute> {
-    do_parse!(i,
-               a_type: be_u16
-            >> len: be_u16
-            >> payload: take!(len)
-            >> (
-                RawAttribute {
-                    a_type: a_type,
-                    length: len,
-                    value: payload.to_vec()
-                }
-            )
-        )
-}
-
-/*
-fn sub_parse(p_type: u16, len: u16, t_id: &[u8], payload: Vec<u8>) -> StunMessage {
-    println!("sub parse {} {} {:?} {:?}", p_type, len, t_id, payload);
-    let mut vec: Vec<Attribute> = vec!();
-    parse_attributes(&payload, &mut vec);
-    StunMessage::new(p_type, len, t_id, vec)
-}
-
-fn parse_attributes(d: &[u8], vec: &mut Vec<Attribute>) {
-    let e = extract(d).unwrap();
-    vec.push(e.1);
-
-    if e.0.len() > 0 {
-        parse_attributes(e.0, vec)
-    }
-}
-*/
 
 #[test]
-fn test_decode_binding_request() {
-    // a Binding Request includes a CHANGE-REQUEST
-    let vec = hex::decode("0001000801ace636e501b3134502510e5c5c220e0003000400000000").unwrap();
-    let x = StunMessage::new(&vec);
-    println!("{:?}", x);
+fn test_enc_dec_reflect_from() {
+    let reflect = ReflectedFrom::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
+    let binary = reflect.encode().unwrap();
+    let reflect2 = ReflectedFrom::decode(&binary);
+    assert_eq!(Some(reflect), reflect2);
+
 }
-
-// Binding Response
-// MAPPED-ADDRESS
-// SOURCE-ADDRESS
-// CHANGED-ADDRESS
-// SERVER(not in 3489)
-// "0101004801ace636e501b3134502510e5c5c220e00010008000172e77345e69400040008000101bb34c2efc600050008000101bb34c2efc6802200204369747269782d332e322e352e3920274d61727368616c205765737427000000"
-#[test]
-fn test_decode_binding_response() {
-    // a Binding Request includes a CHANGE-REQUEST
-    let vec = hex::decode("0101004801ace636e501b3134502510e5c5c220e00010008000172e77345e69400040008000101bb34c2efc600050008000101bb34c2efc6802200204369747269782d332e322e352e3920274d61727368616c205765737427000000").unwrap();
-    let x = StunMessage::new(&vec);
-    println!("{:?}", x);
-}
-
-// Binding Request
-// CHANGE-REQUEST
-// "0001000802aa4e5efc98eb1acd28b659399b85480003000400000004"
-
-// Binding Error Response
-// ERROR-CODE
-// SERVER
-// "0111007402aa4e5efc98eb1acd28b659399b85480009004c00000414556e6b6e6f776e206174747269627574653a205455524e207365727665722077617320636f6e6669677572656420776974686f757420524643203537383020737570706f72740000802200204369747269782d332e322e352e3920274d61727368616c205765737427000000"
-
-// Binding Request
-// CHANGE-REQUEST
-// "0001000803e5315f6932a542f14e0d2d83e97c1e0003000400000002"
-
-// Binding Error Response
-// ERROR-CODE
-// SERVER
-// "0111007403e5315f6932a542f14e0d2d83e97c1e0009004c00000414556e6b6e6f776e206174747269627574653a205455524e207365727665722077617320636f6e6669677572656420776974686f757420524643203537383020737570706f72740000802200204369747269782d332e322e352e3920274d61727368616c205765737427000000"
-
-// Binding Request
-// CHANGE-REQUEST
-// "000100080a32a76f4c99291fb146c42cefe992370003000400000000"
-
-// Binding Response
-// MAPPED-ADDRESS
-// SOURCE-ADDRESS
-// CHANGED-ADDRESS
-// SERVER
-// "010100480a32a76f4c99291fb146c42cefe9923700010008000172e77345e69400040008000101bb34c2efc600050008000101bb34c2efc6802200204369747269782d332e322e352e3920274d61727368616c205765737427000000"
-
-// Binding Request
-// CHANGE-REQUEST
-// "000100080bbd835b21afb91a725d630ade5e10100003000400000000"
-
-// Binding Request
-// CHANGE-REQUEST
-// "000100080b2f5a130ddeac4fef569a5aa293813c0003000400000000"
-
-// Binding Request
-// CHANGE-REQUEST
-// "000100080b4ead7b9703b37a2bd0b33a200bdc2f0003000400000000"
-
-// Binding Request
 
