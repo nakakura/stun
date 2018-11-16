@@ -7,6 +7,10 @@ edition = "2018"
 [dependencies]
 nom = "*"
 byteorder = "*"
+futures = "*"
+tokio = "*"
+rand = "*"
+lazy_static = "*"
 
 [dev-dependencies]
 hex = "*"

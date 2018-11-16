@@ -35,9 +35,9 @@ fn parse_addr(i: &[u8]) -> IResult<&[u8], (u8, u16, [u8;4])> {
 //   bits.
 #[derive(Clone, Debug, PartialOrd, PartialEq)]
 pub struct MappedAddress {
-    family: u8,
-    port: u16,
-    address: Ipv4Addr,
+    pub family: u8,
+    pub port: u16,
+    pub address: Ipv4Addr,
 }
 
 impl MappedAddress {

@@ -2,6 +2,7 @@ pub mod attributes;
 
 use byteorder::{BigEndian, WriteBytesExt};
 use nom::*;
+use rand::prelude::*;
 
 #[cfg(test)]
 use hex;
@@ -18,6 +19,15 @@ impl StunMessage {
             header: header,
             attributes: attributes
         }
+    }
+
+    pub fn create_from_attributes(a_type: u16, attributes: Vec<Attribute>) -> Self {
+        let len = attributes.iter().fold(0, |sum, x| {
+            sum + x.encode().unwrap().len()
+        });
+
+        let header = StunHeader::create_from_type_and_len(a_type, len as u16);
+        Self::new(header, attributes)
     }
 
     pub fn decode(data: &[u8]) -> Option<Self> {
@@ -54,6 +64,14 @@ impl StunHeader {
             length: length,
             transaction_id: transaction_id
         }
+    }
+
+    pub fn create_from_type_and_len(m_type: u16, length: u16) -> Self {
+        let mut rng = rand::thread_rng();
+        let transaction_1: u64 = rng.gen();
+        let transaction_2: u64 = rng.gen();
+        let transaction_id = unsafe { ::std::mem::transmute::<[u64;2], [u8;16]>( [transaction_1, transaction_2] ) };
+        Self::new(m_type, length, transaction_id)
     }
 
     pub fn decode(i: &[u8]) -> IResult<&[u8], StunHeader> {
