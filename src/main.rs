@@ -7,6 +7,7 @@ extern crate byteorder;
 extern crate rand;
 #[macro_use]
 extern crate lazy_static;
+extern crate pnet;
 
 mod message;
 
@@ -14,6 +15,7 @@ use std::net::*;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use pnet::datalink;
 use tokio::net::UdpSocket;
 use tokio::prelude::*;
 use tokio::timer::Delay;
@@ -72,6 +74,7 @@ fn task1(socket: UdpSocket, remote_addr: &SocketAddr) -> UdpSocket {
     match runtime.block_on(task) {
         Ok(socket) => socket,
         Err(e) => {
+            println!("{:?}", e);
             ::std::process::exit(0);
         }
     }
@@ -140,6 +143,31 @@ fn task3(socket: UdpSocket, remote_addr: &SocketAddr) -> Result<UdpSocket, ::std
 }
 
 fn main() {
+    let local_socket_addr = (|| {
+        println!("please specify nic with id");
+        let ifaces = datalink::interfaces();
+        for (id, iface) in (&ifaces).iter().enumerate() {
+            println!("{}: {:?}", id, iface.ips);
+        }
+
+        let mut input = String::new();
+        let ip_addr_opt = match ::std::io::stdin().read_line(&mut input) {
+            Ok(n) => {
+                let id = input.trim().parse::<usize>().expect("input number");
+                ifaces.get(id)?.ips.iter().find(|x| x.is_ipv4()).map(|x| x.ip())
+            },
+            Err(error) => {
+                println!("error: {}", error);
+                None
+            }
+        };
+        ip_addr_opt.map(|ip_addr| {
+            let socket_addr = ::std::net::SocketAddr::new(ip_addr, 0);
+            let socket = UdpSocket::bind(&socket_addr).unwrap();
+            socket.local_addr().unwrap()
+        })
+    })().expect("Please Select valid NIC");
+
     let server_details = "stun.l.google.com:19302";
     let remote_addr: Vec<_> = server_details.to_socket_addrs()
         .expect("Unable to resolve domain")

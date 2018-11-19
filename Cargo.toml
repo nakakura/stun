@@ -11,6 +11,7 @@ futures = "*"
 tokio = "*"
 rand = "*"
 lazy_static = "*"
+pnet = "*"
 
 [dev-dependencies]
 hex = "*"
