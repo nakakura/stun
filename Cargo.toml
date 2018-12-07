@@ -10,7 +10,6 @@ byteorder = "*"
 futures = "*"
 tokio = "*"
 rand = "*"
-lazy_static = "*"
 pnet = "*"
 failure = "*"
 

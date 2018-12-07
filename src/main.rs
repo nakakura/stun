@@ -5,8 +5,6 @@ extern crate nom;
 extern crate hex;
 extern crate byteorder;
 extern crate rand;
-#[macro_use]
-extern crate lazy_static;
 extern crate pnet;
 #[macro_use]
 extern crate failure;
@@ -15,7 +13,6 @@ mod error;
 mod message;
 
 use std::net::*;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use pnet::datalink;
@@ -23,12 +20,6 @@ use tokio::net::UdpSocket;
 use tokio::prelude::*;
 use tokio::timer::Delay;
 use tokio::runtime::current_thread::Runtime;
-
-lazy_static! {
-  static ref NAT_ADDR: Mutex<Option<Ipv4Addr>> = Mutex::new(None);
-  static ref NAT_PORT: Mutex<Option<u16>> = Mutex::new(None);
-  static ref BEHIND_NAT: Mutex<bool> = Mutex::new(false);
-}
 
 const MAX_DATAGRAM_SIZE: usize = 1500;
 
