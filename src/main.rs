@@ -8,7 +8,10 @@ extern crate rand;
 #[macro_use]
 extern crate lazy_static;
 extern crate pnet;
+#[macro_use]
+extern crate failure;
 
+mod error;
 mod message;
 
 use std::net::*;

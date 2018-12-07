@@ -4,6 +4,8 @@ use std::net::Ipv4Addr;
 use byteorder::{BigEndian, WriteBytesExt};
 use nom::*;
 
+use super::error;
+
 fn parse_addr(i: &[u8]) -> IResult<&[u8], (u8, u16, [u8;4])> {
     do_parse!(i,
             _x: be_u8
@@ -49,17 +51,13 @@ impl MappedAddress {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = parse_addr(i) {
-            Some(
-                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
-            )
-        } else {
-            None
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        parse_addr(i).map(|(_, (family, port, address))| {
+            Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+        }).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut wtr = vec![];
         wtr.write_u8(0)?;
         wtr.write_u8(self.family)?;
@@ -75,7 +73,7 @@ fn test_enc_dec_mapped_address() {
     let map = MappedAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
     let binary = map.encode().unwrap();
     let map2 = MappedAddress::decode(&binary);
-    assert_eq!(Some(map), map2);
+    assert_eq!(Ok(map), map2);
 }
 
 // 11.2.2 RESPONSE-ADDRESS
@@ -99,17 +97,13 @@ impl ResponseAddress {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = parse_addr(i) {
-            Some(
-                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
-            )
-        } else {
-            None
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        parse_addr(i).map(|(_, (family, port, address))| {
+            Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+        }).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut wtr = vec![];
         wtr.write_u8(0)?;
         wtr.write_u8(self.family)?;
@@ -125,7 +119,7 @@ fn test_enc_dec_response_address() {
     let map = ResponseAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
     let binary = map.encode().unwrap();
     let map2 = ResponseAddress::decode(&binary);
-    assert_eq!(Some(map), map2);
+    assert_eq!(Ok(map), map2);
 }
 
 // 11.2.3  CHANGED-ADDRESS
@@ -152,17 +146,13 @@ impl ChangedAddress {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = parse_addr(i) {
-            Some(
-                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
-            )
-        } else {
-            None
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        parse_addr(i).map(|(_, (family, port, address))| {
+            Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+        }).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut wtr = vec![];
         wtr.write_u8(0)?;
         wtr.write_u8(self.family)?;
@@ -178,7 +168,7 @@ fn test_enc_dec_change_address() {
     let map = ChangedAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
     let binary = map.encode().unwrap();
     let map2 = ChangedAddress::decode(&binary);
-    assert_eq!(Some(map), map2);
+    assert_eq!(Ok(map), map2);
 }
 
 // 11.2.4 CHANGE-REQUEST
@@ -217,15 +207,13 @@ impl ChangeRequest {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (a, b))) = ChangeRequest::parse(i) {
-            Some(Self::new(a, b))
-        } else {
-            None
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        ChangeRequest::parse(i).map(|(_, (a, b))| {
+            Self::new(a, b)
+        }).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut flag = 0u8;
         if self.a {
             flag |= 4;
@@ -257,7 +245,7 @@ fn test_enc_dec_change_request_true_true() {
     let change_req = ChangeRequest::new(true, true);
     let binary = change_req.encode().unwrap();
     let change_req2 = ChangeRequest::decode(&binary);
-    assert_eq!(Some(change_req), change_req2);
+    assert_eq!(Ok(change_req), change_req2);
 }
 
 #[test]
@@ -265,7 +253,7 @@ fn test_enc_dec_change_request_true_false() {
     let change_req = ChangeRequest::new(true, false);
     let binary = change_req.encode().unwrap();
     let change_req2 = ChangeRequest::decode(&binary);
-    assert_eq!(Some(change_req), change_req2);
+    assert_eq!(Ok(change_req), change_req2);
 }
 
 #[test]
@@ -273,7 +261,7 @@ fn test_enc_dec_change_request_false_true() {
     let change_req = ChangeRequest::new(false, true);
     let binary = change_req.encode().unwrap();
     let change_req2 = ChangeRequest::decode(&binary);
-    assert_eq!(Some(change_req), change_req2);
+    assert_eq!(Ok(change_req), change_req2);
 }
 
 #[test]
@@ -281,7 +269,7 @@ fn test_enc_dec_change_request_false_false() {
     let change_req = ChangeRequest::new(false, false);
     let binary = change_req.encode().unwrap();
     let change_req2 = ChangeRequest::decode(&binary);
-    assert_eq!(Some(change_req), change_req2);
+    assert_eq!(Ok(change_req), change_req2);
 }
 
 // 11.2.5 SOURCE-ADDRESS
@@ -306,17 +294,13 @@ impl SourceAddress {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = parse_addr(i) {
-            Some(
-                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
-            )
-        } else {
-            None
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        parse_addr(i).map(|(_, (family, port, address))| {
+            Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+        }).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut wtr = vec![];
         wtr.write_u8(0)?;
         wtr.write_u8(self.family)?;
@@ -332,7 +316,7 @@ fn test_enc_dec_source_address() {
     let map = SourceAddress::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
     let binary = map.encode().unwrap();
     let map2 = SourceAddress::decode(&binary);
-    assert_eq!(Some(map), map2);
+    assert_eq!(Ok(map), map2);
 }
 
 // 11.2.6 USERNAME
@@ -357,14 +341,13 @@ impl UserName {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        match String::from_utf8(i.to_vec()) {
-            Ok(x) => Some(Self::new(x)),
-            Err(_e) => None,
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        String::from_utf8(i.to_vec()).map(|x| {
+            Self::new(x)
+        }).map_err(|e| e.utf8_error()).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         Ok(self.user_name.clone().into_bytes())
     }
 }
@@ -374,7 +357,7 @@ fn test_enc_dec_user_name() {
     let user = UserName { user_name: "hoge".to_string() };
     let binary = user.encode().unwrap();
     let user2 = UserName::decode(&binary);
-    assert_eq!(Some(user), user2);
+    assert_eq!(Ok(user), user2);
 }
 
 // 11.2.7 PASSWORD
@@ -398,14 +381,13 @@ impl Password {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        match String::from_utf8(i.to_vec()) {
-            Ok(x) => Some(Self::new(x)),
-            Err(_e) => None,
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        String::from_utf8(i.to_vec()).map(|x| {
+            Self::new(x)
+        }).map_err(|e| e.utf8_error()).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         Ok(self.password.clone().into_bytes())
     }
 }
@@ -415,7 +397,7 @@ fn test_enc_dec_password() {
     let passwd = Password { password: "passwd".to_string() };
     let binary = passwd.encode().unwrap();
     let passwd2 = Password::decode(&binary);
-    assert_eq!(Some(passwd), passwd2);
+    assert_eq!(Ok(passwd), passwd2);
 }
 
 // 11.2.8 MESSAGE-INTEGRITY
@@ -441,14 +423,13 @@ impl MessageIntegrity {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        match String::from_utf8(i.to_vec()) {
-            Ok(x) => Some(Self::new(x)),
-            Err(_e) => None,
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        String::from_utf8(i.to_vec()).map(|x| {
+            Self::new(x)
+        }).map_err(|e| e.utf8_error()).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         Ok(self.hmac.clone().into_bytes())
     }
 }
@@ -458,7 +439,7 @@ fn test_enc_dec_integrity() {
     let integrity = MessageIntegrity { hmac: "hmac".to_string() };
     let binary = integrity.encode().unwrap();
     let integrity2 = MessageIntegrity::decode(&binary);
-    assert_eq!(Some(integrity), integrity2);
+    assert_eq!(Ok(integrity), integrity2);
 }
 
 // 11.2.9 ERROR-CODE
@@ -540,18 +521,17 @@ impl ErrorCode {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (class, number, reason))) = ErrorCode::parse(i) {
-            match String::from_utf8(reason.to_vec()) {
-                Ok(x) => Some(Self::new(class, number, x)),
-                Err(_e) => None,
-            }
-        } else {
-            None
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        match ErrorCode::parse(i) {
+            Ok((_, (class, number, reason_slice))) => {
+                let reason_result: Result<_, error::ErrorEnum> = String::from_utf8(reason_slice.to_vec()).map_err(|e| e.utf8_error()).map_err(Into::into);
+                Ok(Self::new(class, number, reason_result?))
+            },
+            Err(e) => Err(e).map_err(Into::into)
         }
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut wtr = vec![];
         wtr.write_u8(0)?;
         wtr.write_u8(0)?;
@@ -578,7 +558,7 @@ fn test_enc_dec_error_code() {
     let error = ErrorCode::new(1, 1, "hoge".to_string());
     let binary = error.encode().unwrap();
     let error2 = ErrorCode::decode(&binary);
-    assert_eq!(Some(error), error2);
+    assert_eq!(Ok(error), error2);
 }
 
 // 11.2.10 UNKNOWN-ATTRIBUTES
@@ -612,13 +592,13 @@ impl Unknown {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Self {
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
         let iter = UnknownIter { buf: i.to_vec() };
         let vec: Vec<u16> = iter.collect();
-        Self::new(vec)
+        Ok(Self::new(vec))
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut wtr: Vec<u8> = vec!();
         for x in self.attributes.iter() {
             wtr.write_u16::<BigEndian>(*x)?;
@@ -660,7 +640,7 @@ fn test_enc_dec_unknown() {
     let unknown = Unknown::new(vec!(1, 2, ::std::u16::MAX));
     let binary = unknown.encode().unwrap();
     let unknown2 = Unknown::decode(&binary);
-    assert_eq!(unknown, unknown2);
+    assert_eq!(Ok(unknown), unknown2);
 }
 
 // 11.2.11 REFLECTED-FROM
@@ -689,17 +669,13 @@ impl ReflectedFrom {
         }
     }
 
-    pub fn decode(i: &[u8]) -> Option<Self> {
-        if let Ok((_, (family, port, address))) = parse_addr(i) {
-            Some(
-                Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
-            )
-        } else {
-            None
-        }
+    pub fn decode(i: &[u8]) -> Result<Self, error::ErrorEnum> {
+        parse_addr(i).map(|(_, (family, port, address))| {
+            Self::new(family, port, Ipv4Addr::new(address[0], address[1], address[2], address[3]))
+        }).map_err(Into::into)
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, ::std::io::Error> {
+    pub fn encode(&self) -> Result<Vec<u8>, error::ErrorEnum> {
         let mut wtr = vec![];
         wtr.write_u8(0)?;
         wtr.write_u8(self.family)?;
@@ -715,7 +691,6 @@ fn test_enc_dec_reflect_from() {
     let reflect = ReflectedFrom::new(1, 5000, Ipv4Addr::new(192, 168, 1, 1));
     let binary = reflect.encode().unwrap();
     let reflect2 = ReflectedFrom::decode(&binary);
-    assert_eq!(Some(reflect), reflect2);
-
+    assert_eq!(Ok(reflect), reflect2);
 }
 

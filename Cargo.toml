@@ -12,6 +12,7 @@ tokio = "*"
 rand = "*"
 lazy_static = "*"
 pnet = "*"
+failure = "*"
 
 [dev-dependencies]
 hex = "*"
