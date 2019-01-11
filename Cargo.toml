@@ -12,6 +12,7 @@ nom = "4.1.1"
 pnet = "0.21.0"
 rand = "0.5.5"
 tokio = "0.1.13"
+stringprep = "0.1.2"
 
 [dev-dependencies]
 hex = "0.3.2"

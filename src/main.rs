@@ -8,9 +8,11 @@ extern crate rand;
 extern crate pnet;
 #[macro_use]
 extern crate failure;
+extern crate stringprep;
 
 mod error;
 mod message;
+mod refactor;
 
 use std::net::*;
 use std::time::{Duration, Instant};
